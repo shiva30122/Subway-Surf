@@ -27,7 +27,7 @@ Transform:
   m_GameObject: {fileID: 891484390091358948}
   serializedVersion: 2
   m_LocalRotation: {x: 0, y: 0, z: 0, w: 1}
-  m_LocalPosition: {x: 0, y: 0, z: 0}
+  m_LocalPosition: {x: 0, y: 0.595, z: 0}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -118,7 +118,7 @@ Transform:
   m_GameObject: {fileID: 2237237285337099389}
   serializedVersion: 2
   m_LocalRotation: {x: 0.18836756, y: 0, z: 0, w: 0.98209757}
-  m_LocalPosition: {x: 0, y: 3.5, z: -6}
+  m_LocalPosition: {x: 0, y: 4.57, z: -5.65}
   m_LocalScale: {x: 1, y: 1, z: 1}
   m_ConstrainProportionsScale: 0
   m_Children: []
@@ -157,7 +157,7 @@ Camera:
     height: 1
   near clip plane: 0.3
   far clip plane: 1000
-  field of view: 120
+  field of view: 100
   orthographic: 0
   orthographic size: 5
   m_Depth: -1
@@ -285,7 +285,7 @@ CharacterController:
   m_SlopeLimit: 45
   m_StepOffset: 0.3
   m_SkinWidth: 0.08
-  m_MinMoveDistance: 0.001
+  m_MinMoveDistance: 0.23
   m_Center: {x: 0, y: 0, z: 0}
 --- !u!114 &2717835590526274187
 MonoBehaviour:
@@ -299,12 +299,20 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: b4a7d8f3c1e244b6d8c9e0f1a2b3c4d5, type: 3}
   m_Name: 
   m_EditorClassIdentifier: 
-  moveSpeed: 6
-  sprintMultiplier: 1.5
-  rotationSpeed: 720
+  laneLeft: {fileID: 0}
+  laneCenter: {fileID: 0}
+  laneRight: {fileID: 0}
+  laneSwitchSpeed: 12
+  laneOffsetX: 2
+  playerFloatY: 1
   jumpHeight: 1.5
+  jumpDuration: 0.6
   gravity: -20
   groundedGravity: -2
+  slideDuration: 0.85
+  slideHeight: 1
+  slideScaleY: 0.55
+  modelTransform: {fileID: 0}
   groundedOffset: 0.1
   groundedRadius: 0.4
   groundLayers:

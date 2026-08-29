@@ -9,6 +9,7 @@ TagManager:
   - Obstacle
   - Train
   - TrainClimbable
+  - GoldCoin
   layers:
   - Default
   - TransparentFX
