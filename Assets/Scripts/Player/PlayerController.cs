@@ -13,12 +13,31 @@ namespace SubwayDash.Player
         [Header("Movement - Public")]
         public float laneSwitchSpeed = 12f;
         public float laneOffsetX = 2f;
-        public float playerFloatY = 1f; // public max Y for gravity - no ground touch needed
-        private int currentLane = 1; // 0=Left 1=Center 2=Right
+        public float playerFloatY = 1f;
+        private int currentLane = 1;
         private float targetX;
         private float lockedZ;
         private float debounceTime = 0.12f;
         private float lastSwitchTime = -10f;
+
+        [Header("Touch Input - Subway Surfers Swipe (Public)")]
+        [Tooltip("Keep true so touch + arrow both work. One build works on PC + mobile + emulator.")]
+        public bool enableTouchInput = true;
+        [Tooltip("Min swipe distance in pixels. Subway Surfers ~40-70px, 50 is safe for 1080p + emulator mouse drag.")]
+        public float swipeMinDistance = 50f;
+        [Tooltip("Max swipe time in seconds. Quick flick only.")]
+        public float swipeMaxTime = 0.45f;
+        [Tooltip("Also accept mouse drag as swipe so emulator + editor testing works without touch device.")]
+        public bool enableMouseDragEmulator = true;
+        [Tooltip("Log swipe for debugging build/emulator")]
+        public bool debugTouchLog = false;
+        // Internal touch state
+        private Vector2 touchStartPos;
+        private float touchStartTime;
+        private bool swipeRightQueued;
+        private bool swipeLeftQueued;
+        private bool swipeUpQueued;
+        private bool swipeDownQueued;
 
         [Header("Jump - Public")]
         public float jumpHeight = 1.8f;
@@ -64,6 +83,8 @@ namespace SubwayDash.Player
             transform.position = new Vector3(0f, playerFloatY, 0f);
             controller.enabled = true;
             lockedZ = 0f;
+            // clear touch queues
+            swipeRightQueued = swipeLeftQueued = swipeUpQueued = swipeDownQueued = false;
         }
 
         private void Awake()
@@ -86,10 +107,8 @@ namespace SubwayDash.Player
 
         private void Start()
         {
-            // Force float Y on start
             Vector3 p = transform.position;
             p.y = playerFloatY + controller.height / 2f - controller.center.y;
-            // Set directly bypassing controller
             controller.enabled = false;
             transform.position = new Vector3(GetLaneX(currentLane), playerFloatY, lockedZ);
             controller.enabled = true;
@@ -99,27 +118,49 @@ namespace SubwayDash.Player
         private void Update()
         {
             HandleInput();
-            HandleLaneMovementDirect(); // no collider block
-            HandleJumpAndGravityFloating(); // uses playerFloatY, no ground ray
+            HandleLaneMovementDirect();
+            HandleJumpAndGravityFloating();
             HandleSlide();
-            LockZDirect(); // no collider push
+            LockZDirect();
         }
 
         private void HandleInput()
         {
+            // --- Subway Surfers swipe detection (must run every frame before checking dirs) ---
+            if (enableTouchInput) HandleTouchSwipe();
+
             bool canSwitch = Time.time - lastSwitchTime > debounceTime;
             if (canSwitch)
             {
-                if (IsRightPressed())
+                // Keep arrow input + OR touch swipe (one build dual support)
+                bool wantRight = IsRightPressed() || swipeRightQueued;
+                bool wantLeft = IsLeftPressed() || swipeLeftQueued;
+                // consume queued swipes so one swipe = one lane change
+                swipeRightQueued = false;
+                swipeLeftQueued = false;
+
+                if (wantRight)
                 {
                     if (currentLane < 2) { currentLane++; targetX = GetLaneX(currentLane); lastSwitchTime = Time.time; Debug.Log($"[Input] Right -> lane {currentLane} targetX {targetX}"); }
                 }
-                else if (IsLeftPressed())
+                else if (wantLeft)
                 {
                     if (currentLane > 0) { currentLane--; targetX = GetLaneX(currentLane); lastSwitchTime = Time.time; Debug.Log($"[Input] Left -> lane {currentLane} targetX {targetX}"); }
                 }
             }
-            if (IsUpPressed())
+            else
+            {
+                // still consume to avoid stacking while debounced
+                swipeRightQueued = false;
+                swipeLeftQueued = false;
+            }
+
+            bool wantUp = IsUpPressed() || swipeUpQueued;
+            bool wantDown = IsDownPressed() || swipeDownQueued;
+            swipeUpQueued = false;
+            swipeDownQueued = false;
+
+            if (wantUp)
             {
                 if (!isSliding && !isJumping)
                 {
@@ -129,7 +170,7 @@ namespace SubwayDash.Player
                     Debug.Log($"[Input] Jump velocity {velocity.y}");
                 }
             }
-            if (IsDownPressed())
+            if (wantDown)
             {
                 if (!isJumping && !isSliding)
                 {
@@ -139,13 +180,80 @@ namespace SubwayDash.Player
             }
         }
 
+        // Subway Surfers style swipe: dominant axis, distance + time thresholds, works with finger + mouse drag (emulator)
+        private void HandleTouchSwipe()
+        {
+            // --- Mouse drag fallback for emulator / editor (no touch device needed) ---
+            if (enableMouseDragEmulator)
+            {
+                if (Input.GetMouseButtonDown(0))
+                {
+                    // Ignore if over UI (pause button etc) - optional safety
+                    // if (UnityEngine.EventSystems.EventSystem.current != null && UnityEngine.EventSystems.EventSystem.current.IsPointerOverGameObject()) return;
+                    touchStartPos = Input.mousePosition;
+                    touchStartTime = Time.unscaledTime;
+                    if (debugTouchLog) Debug.Log($"[Touch] MouseDown {touchStartPos}");
+                }
+                else if (Input.GetMouseButtonUp(0))
+                {
+                    Vector2 endPos = Input.mousePosition;
+                    float dt = Time.unscaledTime - touchStartTime;
+                    Vector2 delta = endPos - touchStartPos;
+                    if (dt <= swipeMaxTime && delta.magnitude >= swipeMinDistance)
+                    {
+                        ResolveSwipe(delta);
+                        if (debugTouchLog) Debug.Log($"[Touch] MouseSwipe delta={delta} dt={dt:F2} => R{swipeRightQueued} L{swipeLeftQueued} U{swipeUpQueued} D{swipeDownQueued}");
+                    }
+                    else if (debugTouchLog && delta.magnitude >= 1f) Debug.Log($"[Touch] Mouse ignored delta={delta.magnitude:F0}px dt={dt:F2}s (need {swipeMinDistance}px / {swipeMaxTime}s)");
+                }
+            }
+
+            // --- Real touch (mobile / emulator touch mode) ---
+            if (Input.touchCount > 0)
+            {
+                Touch t = Input.GetTouch(0);
+                if (t.phase == TouchPhase.Began)
+                {
+                    // if (EventSystem.current != null && EventSystem.current.IsPointerOverGameObject(t.fingerId)) return;
+                    touchStartPos = t.position;
+                    touchStartTime = Time.unscaledTime;
+                    if (debugTouchLog) Debug.Log($"[Touch] Began {touchStartPos}");
+                }
+                else if (t.phase == TouchPhase.Ended || t.phase == TouchPhase.Canceled)
+                {
+                    Vector2 endPos = t.position;
+                    float dt = Time.unscaledTime - touchStartTime;
+                    Vector2 delta = endPos - touchStartPos;
+                    if (dt <= swipeMaxTime && delta.magnitude >= swipeMinDistance)
+                    {
+                        ResolveSwipe(delta);
+                        if (debugTouchLog) Debug.Log($"[Touch] Swipe delta={delta} dt={dt:F2} => R{swipeRightQueued} L{swipeLeftQueued} U{swipeUpQueued} D{swipeDownQueued}");
+                    }
+                    else if (debugTouchLog) Debug.Log($"[Touch] Ignored delta={delta.magnitude:F0}px dt={dt:F2}s");
+                }
+            }
+        }
+
+        private void ResolveSwipe(Vector2 delta)
+        {
+            // Subway Surfers: dominant axis decides. Horizontal => lane, Vertical => jump/slide
+            if (Mathf.Abs(delta.x) > Mathf.Abs(delta.y))
+            {
+                if (delta.x > 0) swipeRightQueued = true;
+                else swipeLeftQueued = true;
+            }
+            else
+            {
+                if (delta.y > 0) swipeUpQueued = true;
+                else swipeDownQueued = true;
+            }
+        }
+
         private void HandleLaneMovementDirect()
         {
-            // Direct transform lerp - no CharacterController collision with WallLeft/Right
             float newX = Mathf.Lerp(transform.position.x, targetX, laneSwitchSpeed * Time.deltaTime);
             Vector3 pos = transform.position;
             pos.x = newX;
-            // Keep Y as is (handled by jump), Z as locked
             transform.position = pos;
         }
 
@@ -156,7 +264,6 @@ namespace SubwayDash.Player
                 jumpTimer += Time.deltaTime;
                 velocity.y += gravity * Time.deltaTime;
                 float newY = transform.position.y + velocity.y * Time.deltaTime;
-                // Clamp to floatY when landing
                 if (newY <= playerFloatY && velocity.y < 0)
                 {
                     newY = playerFloatY;
@@ -167,12 +274,9 @@ namespace SubwayDash.Player
                 Vector3 pos = transform.position;
                 pos.y = newY;
                 transform.position = pos;
-                // Also move controller for collision with future obstacles
-                // Use simple translate without ground check
             }
             else
             {
-                // Always float at playerFloatY when not jumping
                 Vector3 pos = transform.position;
                 if (Mathf.Abs(pos.y - playerFloatY) > 0.01f)
                 {
@@ -223,7 +327,6 @@ namespace SubwayDash.Player
 
         private void IgnoreWalkPathCollisions()
         {
-            // Ignore all WalkPath Road/Wall colliders so player not pushed -Z and walls don't block <>
             var cols = FindObjectsOfType<Collider>();
             foreach (var c in cols)
             {

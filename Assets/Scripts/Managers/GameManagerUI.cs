@@ -82,6 +82,9 @@ namespace SubwayDash.Managers
             if (playingUIRoot != null) playingUIRoot.SetActive(true);
             if (collectablesManager != null) collectablesManager.ResetRunCoins();
             if (gameManager != null) gameManager.OnPlayButtonClicked();
+            // HowToPlay only on Play click (per requirement)
+            var howToPlay = FindObjectOfType<HowToPlayUI>();
+            if (howToPlay != null) howToPlay.TryShowOnPlay();
         }
 
         private void Update()
@@ -142,11 +145,11 @@ namespace SubwayDash.Managers
                     if (p != null) p.transform.position = new Vector3(0f, 1f, 0f);
                 }
             }
-            // Hide all coins
+            // Hide all coins via pool (fixes leak)
             if (collectablesManager != null)
             {
                 var coins = FindObjectsOfType<Collectables.GoldCoin>();
-                foreach (var c in coins) c.gameObject.SetActive(false);
+                foreach (var c in coins) if (c.gameObject.activeSelf) collectablesManager.HideCoin(c.gameObject);
             }
             if (pausePanel != null) pausePanel.SetActive(false);
             if (playingUIRoot != null) playingUIRoot.SetActive(false);

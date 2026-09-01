@@ -338,13 +338,12 @@ namespace SubwayDash.Managers
                 }
             }
             activeSegments.Clear();
-            // Hide remaining coins
+            // Hide remaining coins via pool (fixes leak)
             EnsureCollectablesMgr();
             if (collectablesMgr != null)
             {
-                // Hide all active coins
                 var coins = FindObjectsOfType<Collectables.GoldCoin>();
-                foreach (var c in coins) if (c.gameObject.activeSelf) c.gameObject.SetActive(false);
+                foreach (var c in coins) if (c.gameObject.activeSelf) collectablesMgr.HideCoin(c.gameObject);
             }
 
             // Fallback: destroy any stray children under spawnRoot (except pooled) - NEVER destroy startingModel
